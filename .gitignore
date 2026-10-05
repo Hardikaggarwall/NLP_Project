@@ -49,3 +49,5 @@ Thumbs.db
 .temp/
 .tmp/
 *.d.ts
+# Windows package build
+clause-ai-windows.zip

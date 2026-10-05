@@ -1,4 +1,22 @@
 services:
+    # PostgreSQL - the only backing service the API needs
+    postgres:
+        image: postgres:18
+        container_name: clause-postgres
+        ports:
+            - "5432:5432"
+        environment:
+            POSTGRES_USER: clause
+            POSTGRES_PASSWORD: clause
+            POSTGRES_DB: clause
+        volumes:
+            - postgres-data:/var/lib/postgresql
+        healthcheck:
+            test: ["CMD-SHELL", "pg_isready -U clause -d clause"]
+            interval: 5s
+            timeout: 5s
+            retries: 10
+
     # Development Environment
     api-dev:
         build:
@@ -28,3 +46,6 @@ services:
         # We use a profile so this only runs when explicitly requested
         profiles:
             - prod
+
+volumes:
+    postgres-data:

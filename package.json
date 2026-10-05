@@ -22,7 +22,8 @@
         "install:api": "npm ci --workspace=@clause-ai/api --include-workspace-root",
         "install:web": "npm ci --workspace=@clause-ai/web --include-workspace-root",
         "test": "npm run test --workspaces",
-        "test:api": "npm run test --workspace=@clause-ai/api"
+        "test:api": "npm run test --workspace=@clause-ai/api",
+        "db:push": "npm run db:push --workspace=@clause-ai/api"
     },
     "devDependencies": {
         "concurrently": "^9.1.2"
