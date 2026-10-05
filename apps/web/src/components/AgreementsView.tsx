@@ -308,8 +308,7 @@ export const AgreementsView: React.FC<AgreementsViewProps> = ({
                         }}
                     >
                         Agreements are automatically generated whenever a PDF
-                        file is uploaded and processed through the vector
-                        engine.
+                        file is uploaded and analyzed by the clause engine.
                     </p>
 
                     <button

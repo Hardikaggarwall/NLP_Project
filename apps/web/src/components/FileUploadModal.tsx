@@ -1,5 +1,4 @@
 import { fileService } from "@/services";
-import axios from "axios";
 import React, { useRef, useState } from "react";
 import {
     IconAlertTriangle,
@@ -79,33 +78,18 @@ export const FileUploadModal: React.FC<FileUploadModalProps> = ({
         setError(null);
 
         try {
-            // Step 1: Request presigned upload URL
-            setStepStatus("1/3: Requesting secure presigned upload URL...");
-            const urlRes = await fileService.getFileUploadUrl(
-                file.name,
-                "application/pdf",
-            );
+            // Step 1: Upload the PDF to the API
+            setStepStatus("1/2: Uploading PDF document...");
+            const uploadRes = await fileService.uploadFile(file);
 
-            if (!urlRes.success || !urlRes.data) {
-                throw new Error(
-                    urlRes.error || "Failed to generate presigned upload URL.",
-                );
+            if (!uploadRes.success || !uploadRes.data) {
+                throw new Error(uploadRes.error || "Failed to upload file.");
             }
 
-            const { fileId, uploadUrl } = urlRes.data;
+            const { fileId } = uploadRes.data;
 
-            // Step 2: Upload file payload to presigned URL via PUT
-            setStepStatus("2/3: Uploading PDF document payload...");
-            await axios.put(uploadUrl, file, {
-                headers: {
-                    "Content-Type": "application/pdf",
-                },
-            });
-
-            // Step 3: Trigger file processing
-            setStepStatus(
-                "3/3: Initializing vector chunking & agreement creation...",
-            );
+            // Step 2: Analyze the agreement
+            setStepStatus("2/2: Analyzing agreement clauses & risks...");
             const processRes = await fileService.processFile(fileId);
 
             if (!processRes.success) {

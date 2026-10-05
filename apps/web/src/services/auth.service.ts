@@ -1,33 +1,18 @@
 import api, { ApiResponse } from "@/lib/api.client";
 
-export interface RequestOtpResponse {
-    message: string;
-    expiryInMins: number;
-}
-
-export interface VerifyOtpResponse {
+export interface LoginResponse {
     message: string;
     enableOnboarding: boolean;
 }
 
 /**
- * Request a one-time password (OTP) sent to the provided email.
- */
-export const requestOtp = async (
-    email: string,
-): Promise<ApiResponse<RequestOtpResponse>> => {
-    return api.post<RequestOtpResponse>("/api/auth/otp/request", { email });
-};
-
-/**
- * Verify OTP and authenticate.
+ * Login / signup with email.
  * Automatically saves the received auth token via the api.client interceptor.
  */
-export const verifyOtp = async (
+export const login = async (
     email: string,
-    otp: string,
-): Promise<ApiResponse<VerifyOtpResponse>> => {
-    return api.post<VerifyOtpResponse>("/api/auth/otp/verify", { email, otp });
+): Promise<ApiResponse<LoginResponse>> => {
+    return api.post<LoginResponse>("/api/auth/login", { email });
 };
 
 /**

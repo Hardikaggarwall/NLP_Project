@@ -46,7 +46,6 @@ export const AgreementDetailModal: React.FC<AgreementDetailModalProps> = ({
     const [chatInput, setChatInput] = useState("");
     const [sendingQuery, setSendingQuery] = useState(false);
     const [isAiThinking, setIsAiThinking] = useState(false);
-    const [aiStatusIndex, setAiStatusIndex] = useState(0);
     const [hiddenRestartIds, setHiddenRestartIds] = useState<
         Record<string, boolean>
     >({});
@@ -67,31 +66,12 @@ export const AgreementDetailModal: React.FC<AgreementDetailModalProps> = ({
         setCollapsedRisks((prev) => ({ ...prev, [level]: !prev[level] }));
     };
 
-    const AI_STATUSES = [
-        "Clause AI is reading...",
-        "Clause AI is reasoning...",
-        "Clause AI is articulating...",
-        "Clause AI is typing...",
-    ];
+    const AI_STATUSES = ["Searching the agreement..."];
+    const aiStatusIndex = 0;
 
-    const pollIntervalRef = useRef<NodeJS.Timeout | null>(null);
-    const aiStatusTimerRef = useRef<NodeJS.Timeout | null>(null);
     const chatBottomRef = useRef<HTMLDivElement | null>(null);
     const chatScrollRef = useRef<HTMLDivElement | null>(null);
     const isFetchingOlderRef = useRef(false);
-
-    // Clear polling and status timers on unmount or modal close
-    const stopPolling = () => {
-        if (pollIntervalRef.current) {
-            clearInterval(pollIntervalRef.current);
-            pollIntervalRef.current = null;
-        }
-        if (aiStatusTimerRef.current) {
-            clearInterval(aiStatusTimerRef.current);
-            aiStatusTimerRef.current = null;
-        }
-        setIsAiThinking(false);
-    };
 
     useEffect(() => {
         if (isOpen && agreement?.id) {
@@ -104,12 +84,8 @@ export const AgreementDetailModal: React.FC<AgreementDetailModalProps> = ({
             setNextCursor(null);
             setChatId("");
             setSendingQuery(false);
-            stopPolling();
+            setIsAiThinking(false);
         }
-
-        return () => {
-            stopPolling();
-        };
     }, [isOpen, agreement]);
 
     // Load chat messages when switching to chat tab if chatId exists
@@ -214,98 +190,25 @@ export const AgreementDetailModal: React.FC<AgreementDetailModalProps> = ({
         };
 
         setChatMessages((prev) => [...prev, pendingUserMessage]);
+        setIsAiThinking(true);
 
         const queryRes = await agreementService.sendAgreementQuery({
             agreementId: agreement.id,
             message: userMessageText,
             chatId,
         });
+        setIsAiThinking(false);
 
         if (queryRes.success && queryRes.data) {
-            const { userMessage, queryId } = queryRes.data;
+            const { userMessage, assistantMessage } = queryRes.data;
 
-            stopPolling();
-
-            if (userMessage) {
-                setChatMessages((prev) =>
-                    prev.map((msg) =>
-                        msg.id === pendingMsgId ? userMessage : msg,
-                    ),
-                );
-            } else {
-                setChatMessages((prev) =>
-                    prev.map((msg) =>
-                        msg.id === pendingMsgId
-                            ? { ...msg, isSending: false }
-                            : msg,
-                    ),
-                );
-            }
-
-            setIsAiThinking(true);
-            setAiStatusIndex(0);
-
-            aiStatusTimerRef.current = setInterval(() => {
-                setAiStatusIndex((prev) => (prev + 1) % AI_STATUSES.length);
-            }, 1800);
-
-            let attempts = 0;
-            pollIntervalRef.current = setInterval(async () => {
-                attempts++;
-                const pollRes = await agreementService.getQueryResult(queryId);
-                const data = pollRes.data;
-                const statusCode =
-                    pollRes.status || (pollRes.success ? 200 : 500);
-                const is2xx = statusCode >= 200 && statusCode < 300;
-
-                if (
-                    is2xx &&
-                    pollRes.success &&
-                    data &&
-                    data.status === "SUCCESS"
-                ) {
-                    stopPolling();
-                    setSendingQuery(false);
-                    if (data.message) {
-                        const assistantMsg = data.message;
-                        setChatMessages((prev) => [...prev, assistantMsg]);
-                    }
-                } else if (
-                    is2xx &&
-                    pollRes.success &&
-                    data &&
-                    data.status === "PROCESSING"
-                ) {
-                    if (attempts > 24) {
-                        stopPolling();
-                        setSendingQuery(false);
-                        const failureMsg: ChatMessage & { isError?: boolean } =
-                            {
-                                id: "error-" + Date.now(),
-                                chatId,
-                                role: "assistant",
-                                content:
-                                    "Could not generate any response within the time limit. Please try again.",
-                                createdAt: new Date().toISOString(),
-                                isError: true,
-                            };
-                        setChatMessages((prev) => [...prev, failureMsg]);
-                    }
-                } else {
-                    stopPolling();
-                    setSendingQuery(false);
-                    const failureMsg: ChatMessage & { isError?: boolean } = {
-                        id: "error-" + Date.now(),
-                        chatId,
-                        role: "assistant",
-                        content:
-                            "Could not generate response. The server reported an error.",
-                        createdAt: new Date().toISOString(),
-                        isError: true,
-                    };
-                    setChatMessages((prev) => [...prev, failureMsg]);
-                }
-            }, 3000);
+            setChatMessages((prev) => [
+                ...prev.map((msg) =>
+                    msg.id === pendingMsgId ? userMessage : msg,
+                ),
+                assistantMessage,
+            ]);
+            setSendingQuery(false);
         } else {
             setChatMessages((prev) =>
                 prev.filter((msg) => msg.id !== pendingMsgId),
@@ -315,7 +218,8 @@ export const AgreementDetailModal: React.FC<AgreementDetailModalProps> = ({
                 chatId,
                 role: "assistant",
                 content:
-                    "Could not send query to the vector pipeline. Please check connection.",
+                    queryRes.error ||
+                    "Could not send your question. Please check connection.",
                 createdAt: new Date().toISOString(),
                 isError: true,
             };

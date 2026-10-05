@@ -7,21 +7,18 @@ import {
     IconDocument,
     IconFolder,
     IconHome,
-    IconLogOut,
 } from "./icons/CustomIcons";
 
 export type DashboardTab = "agreements" | "files";
 
 interface SidebarProps {
     user?: UserProfile | null;
-    onLogout: () => void;
     isMobileOpen?: boolean;
     onCloseMobile?: () => void;
 }
 
 export const Sidebar: React.FC<SidebarProps> = ({
-    user: _user,
-    onLogout,
+    user,
     isMobileOpen = false,
     onCloseMobile,
 }) => {
@@ -169,12 +166,12 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     </Link>
                 </div>
 
-                {/* User Card */}
+                {/* Shared public account */}
                 <div
                     style={{
                         display: "flex",
-                        alignItems: "center",
-                        justifyContent: "space-between",
+                        flexDirection: "column",
+                        gap: "3px",
                         padding: "10px 12px",
                         background: "#FFFFFF",
                         borderRadius: "12px",
@@ -184,42 +181,31 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 >
                     <div
                         style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: "10px",
                             overflow: "hidden",
                         }}
                     >
-                        <div style={{ overflow: "hidden" }}>
-                            <div
-                                style={{
-                                    fontSize: "0.8rem",
-                                    fontWeight: 600,
-                                    color: "#0F172A",
-                                    whiteSpace: "nowrap",
-                                    overflow: "hidden",
-                                    maxWidth: "full",
-                                }}
-                                title={"Logout"}
-                            >
-                                {"Logout"}
-                            </div>
+                        <div
+                            style={{
+                                fontSize: "0.8rem",
+                                fontWeight: 600,
+                                color: "#0F172A",
+                            }}
+                        >
+                            {user?.name || "Guest"}
                         </div>
+                        <div
+                            style={{
+                                fontSize: "0.72rem",
+                                color: "#64748B",
+                                overflow: "hidden",
+                                textOverflow: "ellipsis",
+                                whiteSpace: "nowrap",
+                            }}
+                        >
+                            {user?.email || "Shared public workspace"}
                     </div>
-
-                    <button
-                        onClick={() => {
-                            if (onCloseMobile) onCloseMobile();
-                            onLogout();
-                        }}
-                        className="btn btn-ghost btn-sm"
-                        title="Sign Out"
-                        style={{ padding: "6px", color: "#94A3B8" }}
-                        aria-label="Sign out"
-                    >
-                        <IconLogOut size={16} />
-                    </button>
                 </div>
+            </div>
             </div>
         </aside>
     );

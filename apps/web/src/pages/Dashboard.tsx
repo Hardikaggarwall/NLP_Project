@@ -1,4 +1,3 @@
-import { getAuthToken } from "@/lib/auth.util";
 import { agreementService, fileService } from "@/services";
 import { AgreementSummaryItem } from "@/services/agreement.service";
 import { UserFileItem } from "@/services/file.service";
@@ -14,10 +13,9 @@ import Sidebar from "@/components/Sidebar";
 
 interface DashboardProps {
     user: UserProfile | null;
-    onLogout: () => void;
 }
 
-export default function Dashboard({ user, onLogout }: DashboardProps) {
+export default function Dashboard({ user }: DashboardProps) {
     const [isMobileSidebarOpen, setIsMobileSidebarOpen] = useState(false);
     const [isUploadModalOpen, setIsUploadModalOpen] = useState(false);
 
@@ -27,7 +25,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
     const [loadingAgreements, setLoadingAgreements] = useState(false);
 
     const fetchFiles = async () => {
-        if (!getAuthToken()) return;
         setLoadingFiles(true);
         const res = await fileService.getUserFiles();
         setLoadingFiles(false);
@@ -37,7 +34,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
     };
 
     const fetchAgreements = async () => {
-        if (!getAuthToken()) return;
         setLoadingAgreements(true);
         const res = await agreementService.getUserAgreements();
         setLoadingAgreements(false);
@@ -66,7 +62,6 @@ export default function Dashboard({ user, onLogout }: DashboardProps) {
         >
             <Sidebar
                 user={user}
-                onLogout={onLogout}
                 isMobileOpen={isMobileSidebarOpen}
                 onCloseMobile={() => setIsMobileSidebarOpen(false)}
             />

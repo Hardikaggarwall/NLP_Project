@@ -33,14 +33,8 @@ export interface ChatMessage {
 }
 
 export interface SendAgreementQueryResponse {
-    queryId: string;
     userMessage: ChatMessage;
-}
-
-export interface GetQueryResultResponse {
-    status: "SUCCESS" | "PROCESSING" | "FAILED";
-    message?: ChatMessage;
-    error?: string;
+    assistantMessage: ChatMessage;
 }
 
 export interface GetChatMessagesResponse {
@@ -74,11 +68,15 @@ export const getAgreementDetails = async (
 export const processAgreement = async (
     id: string,
 ): Promise<ApiResponse<ProcessAgreementResponse>> => {
-    return api.post<ProcessAgreementResponse>("/api/agreement/process", { id });
+    return api.post<ProcessAgreementResponse>(
+        "/api/agreement/process",
+        { id },
+        { timeout: 180000 },
+    );
 };
 
 /**
- * Send a chat query / message for an agreement (Asynchronous)
+ * Send a chat query / message for an agreement; the answer is returned directly
  */
 export const sendAgreementQuery = async (params: {
     agreementId: string;
@@ -86,17 +84,6 @@ export const sendAgreementQuery = async (params: {
     chatId: string;
 }): Promise<ApiResponse<SendAgreementQueryResponse>> => {
     return api.post<SendAgreementQueryResponse>("/api/agreement/query", params);
-};
-
-/**
- * Poll the status and response of an asynchronous agreement query
- */
-export const getQueryResult = async (
-    queryId: string,
-): Promise<ApiResponse<GetQueryResultResponse>> => {
-    return api.get<GetQueryResultResponse>("/api/agreement/query/result", {
-        params: { queryId },
-    });
 };
 
 /**

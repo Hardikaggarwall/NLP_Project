@@ -93,8 +93,7 @@ export const FilesView: React.FC<FilesViewProps> = ({
                             marginTop: "4px",
                         }}
                     >
-                        Uploaded PDF documents, presigned status, and automated
-                        processing pipelines.
+                        PDFs are shared with all visitors; without PostgreSQL, they are temporary.
                     </p>
                 </div>
 
@@ -172,9 +171,8 @@ export const FilesView: React.FC<FilesViewProps> = ({
                             lineHeight: 1.6,
                         }}
                     >
-                        Upload lease and rental contracts as PDF to start vector
-                        processing, AI metadata extraction, and agreement
-                        generation.
+                        Upload lease and rental contracts as PDF to extract key
+                        terms, flag risks and generate the agreement summary.
                     </p>
 
                     <button

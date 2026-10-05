@@ -1,17 +1,12 @@
 import api, { ApiResponse } from "@/lib/api.client";
 
-export interface FileUploadUrlResponse {
+export interface FileUploadResponse {
     fileId: string;
-    uploadUrl: string;
-}
-
-export interface FileDownloadUrlResponse {
-    fileId: string;
-    downloadUrl: string;
 }
 
 export interface ProcessFileResponse {
     success: boolean;
+    agreementId: string;
 }
 
 export interface UserFileItem {
@@ -28,25 +23,15 @@ export interface GetUserFilesResponse {
 }
 
 /**
- * Generate a presigned URL to upload a file directly to storage
+ * Upload a PDF file; its content is stored by the API in the database
  */
-export const getFileUploadUrl = async (
-    fileName: string,
-    mimeType: string,
-): Promise<ApiResponse<FileUploadUrlResponse>> => {
-    return api.get<FileUploadUrlResponse>("/api/files/upload/url", {
-        params: { fileName, mimeType },
-    });
-};
-
-/**
- * Generate a presigned URL to download an uploaded file
- */
-export const getFileDownloadUrl = async (
-    fileId: string,
-): Promise<ApiResponse<FileDownloadUrlResponse>> => {
-    return api.get<FileDownloadUrlResponse>("/api/files/download/url", {
-        params: { fileId },
+export const uploadFile = async (
+    file: File,
+): Promise<ApiResponse<FileUploadResponse>> => {
+    return api.post<FileUploadResponse>("/api/files/upload", file, {
+        params: { fileName: file.name },
+        headers: { "Content-Type": "application/pdf" },
+        timeout: 120000,
     });
 };
 
@@ -56,7 +41,12 @@ export const getFileDownloadUrl = async (
 export const processFile = async (
     fileId: string,
 ): Promise<ApiResponse<ProcessFileResponse>> => {
-    return api.post<ProcessFileResponse>("/api/files/process", { fileId });
+    // Analysis runs synchronously, so allow extra time for large/scanned PDFs
+    return api.post<ProcessFileResponse>(
+        "/api/files/process",
+        { fileId },
+        { timeout: 180000 },
+    );
 };
 
 /**

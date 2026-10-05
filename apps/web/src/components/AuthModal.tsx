@@ -23,15 +23,13 @@ export const AuthModal: React.FC<AuthModalProps> = ({
     onSuccess,
 }) => {
     const [email, setEmail] = useState("");
-    const [otp, setOtp] = useState("");
-    const [step, setStep] = useState<"EMAIL" | "OTP">("EMAIL");
     const [loading, setLoading] = useState(false);
     const [error, setError] = useState<string | null>(null);
     const [message, setMessage] = useState<string | null>(null);
 
     if (!isOpen) return null;
 
-    const handleRequestOtp = async (e: React.FormEvent) => {
+    const handleLogin = async (e: React.FormEvent) => {
         e.preventDefault();
         if (!email.trim()) return;
 
@@ -39,47 +37,22 @@ export const AuthModal: React.FC<AuthModalProps> = ({
         setError(null);
         setMessage(null);
 
-        const res = await authService.requestOtp(email.trim());
+        const res = await authService.login(email.trim());
         setLoading(false);
 
         if (res.success) {
-            setStep("OTP");
-            setMessage(
-                res.data?.message || "Verification code sent to your email.",
-            );
-        } else {
-            setError(
-                res.error ||
-                    "Failed to send verification code. Please check your email.",
-            );
-        }
-    };
-
-    const handleVerifyOtp = async (e: React.FormEvent) => {
-        e.preventDefault();
-        if (!otp.trim()) return;
-
-        setLoading(true);
-        setError(null);
-
-        const res = await authService.verifyOtp(email.trim(), otp.trim());
-        setLoading(false);
-
-        if (res.success) {
-            setMessage("Authentication verified successfully.");
+            setMessage("Signed in successfully.");
             setTimeout(() => {
                 onSuccess();
                 handleClose();
             }, 500);
         } else {
-            setError(res.error || "Invalid or expired OTP. Please try again.");
+            setError(res.error || "Failed to sign in. Please try again.");
         }
     };
 
     const resetForm = () => {
-        setStep("EMAIL");
         setEmail("");
-        setOtp("");
         setError(null);
         setMessage(null);
     };
@@ -135,9 +108,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             color: "#0F172A",
                         }}
                     >
-                        {step === "EMAIL"
-                            ? "Sign In or Sign Up"
-                            : "Enter Verification Code"}
+                        Sign In or Sign Up
                     </h2>
                     <p
                         style={{
@@ -146,9 +117,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                             lineHeight: 1.5,
                         }}
                     >
-                        {step === "EMAIL"
-                            ? "Enter your email to receive a secure one-time password (OTP)."
-                            : `We sent a 6-digit verification code to ${email}`}
+                        Enter your email to continue.
                     </p>
                 </div>
 
@@ -194,179 +163,79 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                 )}
 
                 {/* Form Content */}
-                {step === "EMAIL" ? (
-                    <form
-                        onSubmit={handleRequestOtp}
-                        style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "16px",
-                        }}
-                    >
-                        <div>
-                            <label
-                                htmlFor="auth-email-input"
-                                style={{
-                                    display: "block",
-                                    fontSize: "0.82rem",
-                                    fontWeight: 600,
-                                    color: "#334155",
-                                    marginBottom: "6px",
-                                }}
-                            >
-                                Email Address
-                            </label>
-                            <div style={{ position: "relative" }}>
-                                <input
-                                    id="auth-email-input"
-                                    type="email"
-                                    placeholder="name@company.com"
-                                    className="input-field"
-                                    value={email}
-                                    onChange={(e) => setEmail(e.target.value)}
-                                    disabled={loading}
-                                    required
-                                    autoFocus
-                                    style={{ paddingLeft: "38px" }}
-                                />
-                                <span
-                                    style={{
-                                        position: "absolute",
-                                        left: "12px",
-                                        top: "50%",
-                                        transform: "translateY(-50%)",
-                                        color: "#94A3B8",
-                                        display: "flex",
-                                    }}
-                                >
-                                    <IconMail size={16} />
-                                </span>
-                            </div>
-                        </div>
-
-                        <button
-                            type="submit"
-                            className="btn btn-primary"
-                            disabled={loading || !email.trim()}
+                <form
+                    onSubmit={handleLogin}
+                    style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: "16px",
+                    }}
+                >
+                    <div>
+                        <label
+                            htmlFor="auth-email-input"
                             style={{
-                                width: "100%",
-                                justifyContent: "center",
-                                padding: "12px 18px",
-                                marginTop: "6px",
+                                display: "block",
+                                fontSize: "0.82rem",
+                                fontWeight: 600,
+                                color: "#334155",
+                                marginBottom: "6px",
                             }}
                         >
-                            {loading ? (
-                                <>
-                                    <InlineSpinner size={15} />
-                                    <span>Sending code...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <span>Continue with Email</span>
-                                    <IconArrowRight size={15} />
-                                </>
-                            )}
-                        </button>
-                    </form>
-                ) : (
-                    <form
-                        onSubmit={handleVerifyOtp}
-                        style={{
-                            display: "flex",
-                            flexDirection: "column",
-                            gap: "16px",
-                        }}
-                    >
-                        <div>
-                            <label
-                                htmlFor="auth-otp-input"
-                                style={{
-                                    display: "block",
-                                    fontSize: "0.82rem",
-                                    fontWeight: 600,
-                                    color: "#334155",
-                                    marginBottom: "6px",
-                                }}
-                            >
-                                6-Digit Verification Code
-                            </label>
+                            Email Address
+                        </label>
+                        <div style={{ position: "relative" }}>
                             <input
-                                id="auth-otp-input"
-                                type="text"
-                                maxLength={6}
-                                placeholder="123456"
+                                id="auth-email-input"
+                                type="email"
+                                placeholder="name@company.com"
                                 className="input-field"
-                                value={otp}
-                                onChange={(e) =>
-                                    setOtp(e.target.value.replace(/\D/g, ""))
-                                }
+                                value={email}
+                                onChange={(e) => setEmail(e.target.value)}
                                 disabled={loading}
                                 required
                                 autoFocus
-                                style={{
-                                    textAlign: "center",
-                                    fontSize: "1.3rem",
-                                    letterSpacing: "0.3em",
-                                    fontFamily: "var(--font-mono)",
-                                    fontWeight: 700,
-                                }}
+                                style={{ paddingLeft: "38px" }}
                             />
-                        </div>
-
-                        <button
-                            type="submit"
-                            className="btn btn-primary"
-                            disabled={loading || otp.length < 6}
-                            style={{
-                                width: "100%",
-                                justifyContent: "center",
-                                padding: "12px 18px",
-                                marginTop: "6px",
-                            }}
-                        >
-                            {loading ? (
-                                <>
-                                    <InlineSpinner size={15} />
-                                    <span>Verifying code...</span>
-                                </>
-                            ) : (
-                                <>
-                                    <span>Verify & Sign In</span>
-                                    <IconArrowRight size={15} />
-                                </>
-                            )}
-                        </button>
-
-                        <div
-                            style={{
-                                display: "flex",
-                                justifyContent: "space-between",
-                                alignItems: "center",
-                                marginTop: "6px",
-                            }}
-                        >
-                            <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={() => setStep("EMAIL")}
-                                disabled={loading}
-                                style={{ fontSize: "0.8rem" }}
+                            <span
+                                style={{
+                                    position: "absolute",
+                                    left: "12px",
+                                    top: "50%",
+                                    transform: "translateY(-50%)",
+                                    color: "#94A3B8",
+                                    display: "flex",
+                                }}
                             >
-                                Change Email
-                            </button>
-
-                            <button
-                                type="button"
-                                className="btn btn-ghost btn-sm"
-                                onClick={handleRequestOtp}
-                                disabled={loading}
-                                style={{ fontSize: "0.8rem", color: "#4F46E5" }}
-                            >
-                                Resend Code
-                            </button>
+                                <IconMail size={16} />
+                            </span>
                         </div>
-                    </form>
-                )}
+                    </div>
+
+                    <button
+                        type="submit"
+                        className="btn btn-primary"
+                        disabled={loading || !email.trim()}
+                        style={{
+                            width: "100%",
+                            justifyContent: "center",
+                            padding: "12px 18px",
+                            marginTop: "6px",
+                        }}
+                    >
+                        {loading ? (
+                            <>
+                                <InlineSpinner size={15} />
+                                <span>Signing in...</span>
+                            </>
+                        ) : (
+                            <>
+                                <span>Continue with Email</span>
+                                <IconArrowRight size={15} />
+                            </>
+                        )}
+                    </button>
+                </form>
 
                 {/* Security Note Footer */}
                 <div
@@ -383,7 +252,7 @@ export const AuthModal: React.FC<AuthModalProps> = ({
                     }}
                 >
                     <IconShieldCheck size={14} color="#10B981" />
-                    <span>Encrypted passwordless authentication</span>
+                    <span>Passwordless authentication</span>
                 </div>
             </div>
         </div>

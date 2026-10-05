@@ -728,7 +728,7 @@ export const InlineSpinner: React.FC<{ size?: number; className?: string }> = ({
  */
 export const FullPageLoader: React.FC<{ message?: string; subMessage?: string }> = ({
   message = "Clause AI Engine Initializing",
-  subMessage = "Executing deterministic vector pipeline...",
+  subMessage = "Analyzing agreement clauses...",
 }) => {
   return (
     <div
