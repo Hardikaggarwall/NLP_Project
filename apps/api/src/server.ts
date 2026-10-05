@@ -1,28 +1,13 @@
 import { env } from "@/config/env.config";
 import { closeDatabaseConnection, db } from "@/infra/db.client";
-import { closeRedisConnection } from "@/infra/redis.client";
 import { authorize } from "@/middlewares/auth.middleware";
 import { correlationMiddleware } from "@/middlewares/correlation.middleware";
 import cors from "@/middlewares/cors.middleware";
-import RateLimiter from "@/middlewares/ratelimiter.middleware";
-import { closeMessageQueue } from "@/queues/message.queue";
-import {
-    closeSchedulerQueue,
-    scheduleFileCleanup,
-} from "@/queues/scheduler.queue";
 import agreementRoutes from "@/routes/agreement.routes";
 import authRoutes from "@/routes/auth.routes";
 import fileRoutes from "@/routes/file.routes";
 import userRoutes from "@/routes/user.routes";
 import { httpLogger, logger } from "@/utils/logger.util";
-import {
-    closeMessageWorker,
-    initMessageWorker,
-} from "@/workers/message.worker";
-import {
-    closeSchedulerWorker,
-    initSchedulerWorker,
-} from "@/workers/scheduler.worker";
 import { sql } from "drizzle-orm";
 import express, { NextFunction, Request, Response } from "express";
 import helmet from "helmet";
@@ -66,10 +51,10 @@ export const startServer = () => {
     });
 
     // ================== API Routes ==================
-    app.use("/api/auth", RateLimiter.auth, authRoutes);
-    app.use("/api/user", authorize, RateLimiter.api, userRoutes);
-    app.use("/api/files", authorize, RateLimiter.api, fileRoutes);
-    app.use("/api/agreement", authorize, RateLimiter.api, agreementRoutes);
+    app.use("/api/auth", authRoutes);
+    app.use("/api/user", authorize, userRoutes);
+    app.use("/api/files", authorize, fileRoutes);
+    app.use("/api/agreement", authorize, agreementRoutes);
 
     // Global "Route Not Found" (404) Catch-All Middleware
     app.use((req: Request, res: Response, next: NextFunction) => {
@@ -88,13 +73,6 @@ export const startServer = () => {
     // Run server
     const server = app.listen(env.PORT || 3000, () => {
         logger.info(`Clause AI is running on port ${env.PORT}`);
-
-        // Initialize worker
-        initMessageWorker();
-        initSchedulerWorker();
-
-        // Register cron job
-        scheduleFileCleanup();
     });
 
     // ================== Server Timeout Configurations ==================
@@ -122,15 +100,6 @@ export const startServer = () => {
 
         // Close database
         closeDatabaseConnection();
-        closeRedisConnection();
-
-        // Close queues
-        closeMessageQueue();
-        closeSchedulerQueue();
-
-        // Close workers
-        closeMessageWorker();
-        closeSchedulerWorker();
 
         // Stop accepting new connections
         server.close(() => {

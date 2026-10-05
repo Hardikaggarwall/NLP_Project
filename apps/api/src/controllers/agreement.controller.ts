@@ -1,7 +1,6 @@
 import * as AgreementService from "@/services/agreements.service";
-import { QueryResponseCache } from "@/services/cache.service";
 import * as ChatService from "@/services/chat.service";
-import * as WorkflowService from "@/services/workflow.service";
+import * as AnalysisService from "@/services/analysis.service";
 import { logger } from "@/utils/logger.util";
 import { Request, Response } from "express";
 
@@ -66,10 +65,17 @@ export const processAgreement = async (req: Request, res: Response) => {
             return res.status(400).json({ error: "Agreement ID is required" });
         }
 
-        await AgreementService.processAgreement(id, userId);
+        const { success, error } = await AnalysisService.reprocessAgreement(
+            id,
+            userId,
+        );
+
+        if (!success) {
+            return res.status(400).json({ error });
+        }
 
         return res.status(200).json({
-            message: "Agreement processing triggered successfully",
+            message: "Agreement processed successfully",
         });
     } catch (error: any) {
         logger.error(error.message);
@@ -78,7 +84,7 @@ export const processAgreement = async (req: Request, res: Response) => {
 };
 
 /**
- * Query an agreement using RAG / Query Agent
+ * Answer a question about an agreement (synchronous)
  */
 export const sendAgreementQuery = async (req: Request, res: Response) => {
     try {
@@ -99,8 +105,8 @@ export const sendAgreementQuery = async (req: Request, res: Response) => {
             return res.status(400).json({ error: "Message is too long" });
         }
 
-        const { userMessage, queryId, error } =
-            await WorkflowService.processAgreementQuery(
+        const { userMessage, assistantMessage, error } =
+            await AnalysisService.processAgreementQuery(
                 agreementId,
                 userId,
                 chatId,
@@ -111,48 +117,10 @@ export const sendAgreementQuery = async (req: Request, res: Response) => {
             return res.status(400).json({ error });
         }
 
-        return res.status(202).json({
-            queryId,
+        return res.status(200).json({
             userMessage,
+            assistantMessage,
         });
-    } catch (error: any) {
-        logger.error(error.message);
-        return res.status(500).json({ error: "Internal server error" });
-    }
-};
-
-/**
- * Get the result of an async agreement query
- */
-export const getQueryResult = async (req: Request, res: Response) => {
-    try {
-        const { queryId } = req.query;
-
-        if (!queryId) {
-            return res
-                .status(400)
-                .json({ error: "Query tracking ID is required" });
-        }
-
-        const result = await QueryResponseCache.get(queryId as string);
-        if (!result) {
-            return res
-                .status(404)
-                .json({ error: "Query not found or expired" });
-        }
-
-        if (result.status === "PROCESSING") {
-            return res.status(202).json({ status: "PROCESSING" });
-        } else if (result.status === "FAILED") {
-            return res.status(400).json({ error: result.error });
-        } else if (result.status === "SUCCESS") {
-            return res.status(200).json({
-                status: "SUCCESS",
-                message: result.message,
-            });
-        } else {
-            throw new Error("Unknown status");
-        }
     } catch (error: any) {
         logger.error(error.message);
         return res.status(500).json({ error: "Internal server error" });

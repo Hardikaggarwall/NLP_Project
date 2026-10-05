@@ -5,43 +5,42 @@ dotenv.config();
 
 const envSchema = z.object({
     // Server Config
-    NODE_ENV: z.enum(["development", "production", "test"]),
-    PORT: z.coerce.number(),
+    NODE_ENV: z.preprocess(
+        (value) => (value ? value : "development"),
+        z.enum(["development", "production", "test"]),
+    ),
+    PORT: z.preprocess(
+        (value) => (value === undefined || value === "" ? 4000 : value),
+        z.coerce.number(),
+    ),
     ALLOW_DOMAINS: z.string().optional(),
 
     // Database Config
-    DB_HOST: z.string().min(1, "DB_HOST is required"),
-    DB_PORT: z.coerce.number(),
-    DB_USER: z.string().min(1, "DB_USER is required"),
-    DB_PASSWORD: z.string().min(1, "DB_PASSWORD is required"),
-    DB_NAME: z.string().min(1, "DB_NAME is required"),
-
-    // Redis Config
-    REDIS_URL: z.string().min(1, "REDIS_URL is required"),
-    REDIS_MQ_URL: z.string().min(1, "REDIS_MQ_URL is required"),
+    DB_HOST: z.preprocess(
+        (value) => (value ? value : "localhost"),
+        z.string(),
+    ),
+    DB_PORT: z.preprocess(
+        (value) => (value === undefined || value === "" ? 5432 : value),
+        z.coerce.number(),
+    ),
+    DB_USER: z.preprocess((value) => (value ? value : "clause"), z.string()),
+    DB_PASSWORD: z.preprocess(
+        (value) => (value ? value : "clause"),
+        z.string(),
+    ),
+    DB_SSL: z
+        .enum(["true", "false"])
+        .default("false")
+        .transform((v) => v === "true"),
+    DB_NAME: z.preprocess((value) => (value ? value : "clause"), z.string()),
 
     // Auth Config
-    JWT_SECRET: z.string().min(1, "JWT_SECRET is required"),
-    JWT_EXPIRES_IN: z.string(),
-    SESSION_TTL_DAYS: z.coerce.number(),
-
-    // OTP Config
-    DEVELOPMENT_OTP: z.string().optional(),
-    OTP_RETRY_LIMIT: z.coerce.number(),
-    OTP_EXPIRY_MINUTES: z.coerce.number(),
-
-    // S3 Storage Config
-    S3_ENDPOINT: z.string().url("Invalid S3_ENDPOINT URL"),
-    S3_ACCESS_KEY: z.string().min(1, "S3_ACCESS_KEY is required"),
-    S3_SECRET_KEY: z.string().min(1, "S3_SECRET_KEY is required"),
-    FILES_BUCKET: z.string().min(1, "FILES_BUCKET is required"),
-
-    // AI Config
-    GOOGLE_API_KEY: z.string().min(1, "GOOGLE_API_KEY is required"),
-
-    // Mail Config
-    RESEND_API_KEY: z.string().min(1, "RESEND_API_KEY is required"),
-    MAIL_FROM: z.string().min(1, "MAIL_FROM is required"),
+    JWT_SECRET: z.preprocess(
+        (value) => (value ? value : "public-mode-unused-secret"),
+        z.string(),
+    ),
+    JWT_EXPIRES_IN: z.string().default("7d"),
 });
 
 const _env = envSchema.safeParse(process.env);

@@ -1,4 +1,10 @@
 import { env } from "@/config/env.config";
+import {
+    PUBLIC_USER_EMAIL,
+    PUBLIC_USER_ID,
+    PUBLIC_USER_NAME,
+} from "@/config/public-user.config";
+import { Users } from "@/db/schema/users";
 import { logger } from "@/utils/logger.util";
 import { drizzle } from "drizzle-orm/node-postgres";
 import pg from "pg";
@@ -14,9 +20,7 @@ const pool = new Pool({
     user: env.DB_USER,
     password: env.DB_PASSWORD,
     database: env.DB_NAME,
-    ssl: {
-        rejectUnauthorized: false,
-    },
+    ssl: env.DB_SSL ? { rejectUnauthorized: false } : false,
     max: MAX_POOL_SIZE,
     idleTimeoutMillis: 30000,
     connectionTimeoutMillis: 5000,
@@ -27,10 +31,11 @@ const pool = new Pool({
 export const closeDatabaseConnection = () => pool.end();
 
 export const db = drizzle({ client: pool });
+export let databaseAvailable = false;
 
 // Pool create a new client on the next query.
-pool.on("error", (err) => {
-    logger.error(err, "Unexpected error on idle client");
+pool.on("error", () => {
+    databaseAvailable = false;
 });
 
 const warmPool = async (count: number) => {
@@ -44,14 +49,24 @@ const warmPool = async (count: number) => {
 const init = async (retries = 5, delayMs = 1000): Promise<void> => {
     try {
         await warmPool(MIN_POOL_SIZE);
+        await db
+            .insert(Users)
+            .values({
+                id: PUBLIC_USER_ID,
+                name: PUBLIC_USER_NAME,
+                email: PUBLIC_USER_EMAIL,
+                is_verified: true,
+            })
+            .onConflictDoNothing();
+        databaseAvailable = true;
         logger.info("Database client connected successfully");
-    } catch (error: any) {
-        logger.error(error.message, "Failed to connect to database");
+    } catch {
+        databaseAvailable = false;
         if (retries > 0) {
             await new Promise((r) => setTimeout(r, delayMs));
             return init(retries - 1, delayMs * 2);
         }
-        throw error;
+        return; // Prevent unhandled rejection
     }
 };
 

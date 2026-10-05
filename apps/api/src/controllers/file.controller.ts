@@ -1,23 +1,20 @@
 import { SUPPORTED_MIME_TYPES } from "@/constants";
-import { logger } from "@/utils/logger.util";
+import * as AnalysisService from "@/services/analysis.service";
 import * as FileService from "@/services/file.service";
+import { logger } from "@/utils/logger.util";
 import { Request, Response } from "express";
 
 /**
- * Generate Presigned URL for uploading a file directly from client
+ * Upload a file; the raw request body is stored in the database
  */
-export const getFileUploadUrl = async (req: Request, res: Response) => {
+export const uploadFile = async (req: Request, res: Response) => {
     try {
         const { userId } = req.user;
-        const { fileName, mimeType } = req.query as {
-            fileName: string;
-            mimeType: string;
-        };
+        const { fileName } = req.query as { fileName: string };
+        const mimeType = req.headers["content-type"]?.split(";")[0] ?? "";
 
-        if (!fileName || !mimeType) {
-            return res
-                .status(400)
-                .json({ error: "Filename and mime type are required" });
+        if (!fileName) {
+            return res.status(400).json({ error: "Filename is required" });
         }
 
         if (!SUPPORTED_MIME_TYPES.hasOwnProperty(mimeType)) {
@@ -26,16 +23,24 @@ export const getFileUploadUrl = async (req: Request, res: Response) => {
                 .json({ error: `Unsupported file type: ${mimeType}` });
         }
 
-        const { success, fileId, uploadUrl } =
-            await FileService.generateFileUploadUrl(userId, fileName, mimeType);
-
-        if (!success) {
-            return res
-                .status(400)
-                .json({ error: "Failed to generate presigned URL" });
+        const data = req.body;
+        if (!Buffer.isBuffer(data) || data.length === 0) {
+            return res.status(400).json({ error: "File content is empty" });
         }
 
-        return res.status(200).json({ fileId, uploadUrl });
+        // Verify PDF magic bytes rather than trusting the header
+        if (data.subarray(0, 5).toString() !== "%PDF-") {
+            return res.status(400).json({ error: "File is not a valid PDF" });
+        }
+
+        const { fileId } = await FileService.uploadFile(
+            userId,
+            fileName.slice(0, 255),
+            mimeType,
+            data,
+        );
+
+        return res.status(201).json({ fileId });
     } catch (error: any) {
         logger.error(error.message);
         return res.status(500).json({ error: "Internal server error" });
@@ -43,9 +48,9 @@ export const getFileUploadUrl = async (req: Request, res: Response) => {
 };
 
 /**
- * Generate Presigned URL for downloading a file directly from client
+ * Download a stored file
  */
-export const getFileDownloadUrl = async (req: Request, res: Response) => {
+export const downloadFile = async (req: Request, res: Response) => {
     try {
         const { userId } = req.user;
         const { fileId } = req.query as { fileId: string };
@@ -54,14 +59,17 @@ export const getFileDownloadUrl = async (req: Request, res: Response) => {
             return res.status(400).json({ error: "File ID is required" });
         }
 
-        const { success, downloadUrl, error } =
-            await FileService.generateFileDownloadUrl(userId, fileId);
-
-        if (!success) {
-            return res.status(400).json({ error });
+        const file = await FileService.fetchFileContent(userId, fileId);
+        if (!file) {
+            return res.status(404).json({ error: "File not found" });
         }
 
-        return res.status(200).json({ fileId, downloadUrl });
+        res.setHeader("Content-Type", file.mimeType);
+        res.setHeader(
+            "Content-Disposition",
+            `attachment; filename="${encodeURIComponent(file.fileName)}"`,
+        );
+        return res.status(200).send(file.data);
     } catch (error: any) {
         logger.error(error.message);
         return res.status(500).json({ error: "Internal server error" });
@@ -80,16 +88,14 @@ export const processFile = async (req: Request, res: Response) => {
             return res.status(400).json({ error: "File ID is required" });
         }
 
-        const { success, error } = await FileService.processFile(
-            userId,
-            fileId,
-        );
+        const { success, agreementId, error } =
+            await AnalysisService.processFile(userId, fileId);
 
         if (!success) {
             return res.status(400).json({ error });
         }
 
-        return res.status(200).json({ success });
+        return res.status(200).json({ success, agreementId });
     } catch (error: any) {
         logger.error(error.message);
         return res.status(500).json({ error: "Internal server error" });

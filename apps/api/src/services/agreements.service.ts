@@ -1,15 +1,11 @@
-import { VECTOR_SIMILARITY_THRESHOLD } from "@/config/ai.config";
-import { AgreementStatus, RiskLevelType, SectionClauseType } from "@/constants";
+import { AgreementStatus } from "@/constants";
 import { Agreements } from "@/db/schema/agreements";
 import { Risks } from "@/db/schema/risks";
 import { Sections } from "@/db/schema/sections";
-import { db } from "@/infra/db.client";
-import { publishAgreementProcessEvent } from "@/queues/message.queue";
-import {
-    AgreementCache,
-    AgreementUserMapCache,
-} from "@/services/cache.service";
-import { and, cosineDistance, desc, eq, gt, sql } from "drizzle-orm";
+import { databaseAvailable, db } from "@/infra/db.client";
+import type { AgreementAnalysis } from "@/nlp";
+import * as MemoryStore from "@/services/memory.store";
+import { and, desc, eq, sql } from "drizzle-orm";
 
 /**
  * Ensures the existence of an agreement for a specific user.
@@ -18,22 +14,21 @@ export const ensureAgreementExists = async (
     agreementId: string,
     userId: string,
 ) => {
-    let agreementUserId = await AgreementUserMapCache.get(agreementId);
-
-    // Handle cache miss
-    if (!agreementUserId) {
-        const [agreement] = await db
-            .select({ userId: Agreements.user_id })
-            .from(Agreements)
-            .where(eq(Agreements.id, agreementId));
-
-        if (!agreement) throw new Error("Agreement not found");
-        agreementUserId = agreement.userId;
-
-        await AgreementUserMapCache.set(agreementId, agreementUserId);
+    if (MemoryStore.hasMemoryAgreement(agreementId)) {
+        if (!MemoryStore.getMemoryAgreementRecord(agreementId, userId)) {
+            throw new Error("Unauthorized access");
+        }
+        return true;
     }
+    if (!databaseAvailable) throw new Error("Agreement not found");
 
-    if (agreementUserId !== userId) throw new Error("Unauthorized access");
+    const [agreement] = await db
+        .select({ userId: Agreements.user_id })
+        .from(Agreements)
+        .where(eq(Agreements.id, agreementId));
+
+    if (!agreement) throw new Error("Agreement not found");
+    if (agreement.userId !== userId) throw new Error("Unauthorized access");
 
     return true;
 };
@@ -42,40 +37,31 @@ export const ensureAgreementExists = async (
  * Fetch agreement details
  */
 export const fetchAgreement = async (agreementId: string, userId: string) => {
-    let agreement = await AgreementCache.get(agreementId);
+    const memoryAgreement = MemoryStore.getMemoryAgreement(agreementId, userId);
+    if (memoryAgreement) return memoryAgreement;
+    if (!databaseAvailable) return null;
 
-    // Handle cache miss
-    if (!agreement) {
-        [agreement] = await db
-            .select({
-                id: Agreements.id,
-                title: Agreements.title,
-                type: Agreements.type,
-                metadata: Agreements.metadata,
-                property: Agreements.property,
-                payments: Agreements.payments,
-                parties: Agreements.parties,
-                summary: Agreements.summary,
-                status: Agreements.status,
-                error: Agreements.error,
-                userId: Agreements.user_id,
-                fileId: Agreements.file_id,
-                createdAt: Agreements.created_at,
-                updatedAt: Agreements.updated_at,
-            })
-            .from(Agreements)
-            .where(
-                and(
-                    eq(Agreements.id, agreementId),
-                    eq(Agreements.user_id, userId),
-                ),
-            );
-
-        // Update cache
-        if (agreement) {
-            AgreementCache.set(agreementId, agreement);
-        }
-    }
+    const [agreement] = await db
+        .select({
+            id: Agreements.id,
+            title: Agreements.title,
+            type: Agreements.type,
+            metadata: Agreements.metadata,
+            property: Agreements.property,
+            payments: Agreements.payments,
+            parties: Agreements.parties,
+            summary: Agreements.summary,
+            status: Agreements.status,
+            error: Agreements.error,
+            userId: Agreements.user_id,
+            fileId: Agreements.file_id,
+            createdAt: Agreements.created_at,
+            updatedAt: Agreements.updated_at,
+        })
+        .from(Agreements)
+        .where(
+            and(eq(Agreements.id, agreementId), eq(Agreements.user_id, userId)),
+        );
 
     return agreement ?? null;
 };
@@ -84,7 +70,10 @@ export const fetchAgreement = async (agreementId: string, userId: string) => {
  * Fetch all agreements for a user
  */
 export const fetchAgreementsByUser = async (userId: string) => {
-    return await db
+    const memoryAgreements = MemoryStore.listMemoryAgreements(userId);
+    if (!databaseAvailable) return memoryAgreements;
+
+    const agreements = await db
         .select({
             id: Agreements.id,
             type: Agreements.type,
@@ -94,13 +83,24 @@ export const fetchAgreementsByUser = async (userId: string) => {
             createdAt: Agreements.created_at,
         })
         .from(Agreements)
-        .where(and(eq(Agreements.user_id, userId)));
+        .where(eq(Agreements.user_id, userId))
+        .orderBy(desc(Agreements.created_at));
+    const agreementIds = new Set(agreements.map((agreement) => agreement.id));
+    return [
+        ...agreements,
+        ...memoryAgreements.filter((agreement) => !agreementIds.has(agreement.id)),
+    ];
 };
 
 /**
  * Check if file is processed
  */
 export const isFileProcessed = async (fileId: string, userId: string) => {
+    if (MemoryStore.hasMemoryFile(fileId)) {
+        return MemoryStore.isMemoryFileProcessed(userId, fileId);
+    }
+    if (!databaseAvailable) return false;
+
     const [agreement] = await db
         .select({ id: Agreements.id })
         .from(Agreements)
@@ -118,6 +118,10 @@ export const createAgreement = async (
     userId: string,
     fileId: string,
 ): Promise<string> => {
+    if (!databaseAvailable || MemoryStore.hasMemoryFile(fileId)) {
+        return MemoryStore.createMemoryAgreement(userId, fileId);
+    }
+
     const [agreement] = await db
         .insert(Agreements)
         .values({
@@ -134,51 +138,6 @@ export const createAgreement = async (
 };
 
 /**
- * Updates the agreement data and saves sections
- */
-export const updateAgreement = async (
-    agreementId: string,
-    { title, type, metadata, property, payments, parties }: any,
-    userId: string,
-): Promise<void> => {
-    await db
-        .update(Agreements)
-        .set({
-            title,
-            type,
-            metadata,
-            property,
-            payments,
-            parties,
-        })
-        .where(
-            and(eq(Agreements.id, agreementId), eq(Agreements.user_id, userId)),
-        );
-
-    // Clear agreement from cache
-    AgreementCache.del(agreementId);
-};
-
-/**
- * Updates the summary field of an agreement.
- */
-export const updateAgreementSummary = async (
-    agreementId: string,
-    summary: string[],
-    userId: string,
-): Promise<void> => {
-    await db
-        .update(Agreements)
-        .set({ summary })
-        .where(
-            and(eq(Agreements.id, agreementId), eq(Agreements.user_id, userId)),
-        );
-
-    // Clear agreement from cache
-    AgreementCache.del(agreementId);
-};
-
-/**
  * Updates an agreement's status
  */
 export const updateAgreementStatus = async (
@@ -187,6 +146,12 @@ export const updateAgreementStatus = async (
     error: string | null,
     userId: string,
 ): Promise<void> => {
+    if (MemoryStore.hasMemoryAgreement(agreementId)) {
+        MemoryStore.setMemoryAgreementStatus(agreementId, userId, status, error);
+        return;
+    }
+    if (!databaseAvailable) throw new Error("Agreement not found");
+
     await db
         .update(Agreements)
         .set({
@@ -196,140 +161,121 @@ export const updateAgreementStatus = async (
         .where(
             and(eq(Agreements.id, agreementId), eq(Agreements.user_id, userId)),
         );
-
-    // Clear agreement from cache
-    AgreementCache.del(agreementId);
 };
 
 /**
- * Insert sections into the database
+ * Atomically replaces all analysis output (fields, sections, risks) and marks
+ * the agreement as SUCCESS.
  */
-export const createSections = async (
+export const saveAgreementAnalysis = async (
     agreementId: string,
-    sections: {
-        ref: string;
-        type: SectionClauseType;
-        heading: string;
-        content: string;
-    }[],
     userId: string,
-): Promise<{ id: string }[]> => {
-    if (sections.length === 0) return [];
-    await ensureAgreementExists(agreementId, userId);
+    analysis: AgreementAnalysis,
+): Promise<void> => {
+    if (MemoryStore.hasMemoryAgreement(agreementId)) {
+        MemoryStore.setMemoryAgreementAnalysis(agreementId, userId, analysis);
+        return;
+    }
+    if (!databaseAvailable) throw new Error("Agreement not found");
 
-    const sectionsToInsert = sections.map((sec) => ({
-        agreement_id: agreementId,
-        ref: sec.ref,
-        heading: sec.heading,
-        type: sec.type,
-        content: sec.content,
-    }));
+    await db.transaction(async (tx) => {
+        await tx.delete(Sections).where(eq(Sections.agreement_id, agreementId));
+        await tx.delete(Risks).where(eq(Risks.agreement_id, agreementId));
 
-    const insertedIds = await db
-        .insert(Sections)
-        .values(sectionsToInsert)
-        .returning({ id: Sections.id });
+        await tx
+            .update(Agreements)
+            .set({
+                title: analysis.title,
+                type: analysis.type,
+                metadata: analysis.metadata,
+                property: analysis.property,
+                payments: analysis.payments,
+                parties: analysis.parties,
+                summary: analysis.summary,
+                status: "SUCCESS",
+                error: null,
+            })
+            .where(
+                and(
+                    eq(Agreements.id, agreementId),
+                    eq(Agreements.user_id, userId),
+                ),
+            );
 
-    return insertedIds;
+        if (analysis.sections.length > 0) {
+            await tx.insert(Sections).values(
+                analysis.sections.map((sec) => ({
+                    agreement_id: agreementId,
+                    ref: sec.ref,
+                    heading: sec.heading.slice(0, 255),
+                    type: sec.type,
+                    content: sec.content,
+                })),
+            );
+        }
+
+        if (analysis.risks.length > 0) {
+            await tx.insert(Risks).values(
+                analysis.risks.map((risk) => ({
+                    agreement_id: agreementId,
+                    clause: risk.clause,
+                    reason: risk.reason,
+                    level: risk.level,
+                })),
+            );
+        }
+    });
 };
 
 /**
- * Fetch sections by agreement
+ * Full-text search over an agreement's sections (Postgres tsvector ranking).
+ * Terms are OR-ed so partial matches still rank.
  */
-export const fetchSectionsByAgreement = async (
+export const searchSections = async (
     agreementId: string,
     userId: string,
+    terms: string[],
+    limit: number = 4,
 ) => {
+    if (MemoryStore.hasMemoryAgreement(agreementId)) {
+        const termsLower = terms.map((term) => term.toLowerCase());
+        return MemoryStore.getMemorySections(agreementId, userId)
+            .filter((section) => {
+                const searchable = `${section.heading} ${section.content}`.toLowerCase();
+                return termsLower.some((term) => searchable.includes(term));
+            })
+            .slice(0, limit);
+    }
+    if (!databaseAvailable) return [];
+
     await ensureAgreementExists(agreementId, userId);
 
-    const sections = await db
+    const safeTerms = terms
+        .map((t) => t.replace(/[^a-z0-9]/gi, ""))
+        .filter(Boolean);
+    if (safeTerms.length === 0) return [];
+
+    const document = sql`to_tsvector('english', ${Sections.heading} || ' ' || ${Sections.content})`;
+    const query = sql`to_tsquery('english', ${safeTerms.join(" | ")})`;
+    const rank = sql<number>`ts_rank_cd(${document}, ${query})`;
+
+    return await db
         .select({
             id: Sections.id,
             ref: Sections.ref,
             heading: Sections.heading,
-            type: Sections.type,
             content: Sections.content,
-            embedding: Sections.embedding,
-        })
-        .from(Sections)
-        .where(eq(Sections.agreement_id, agreementId));
-
-    return sections;
-};
-
-/**
- * Fetch sections of an agreement by embedding similarity
- */
-export const fetchSectionsByEmbeddingSimilarity = async (
-    agreementId: string,
-    embedding: number[],
-) => {
-    const similarity = sql<number>`1 - (${cosineDistance(Sections.embedding, embedding)})`;
-
-    const results = await db
-        .select({
-            id: Sections.id,
-            ref: Sections.ref,
-            heading: Sections.heading,
-            content: Sections.content,
-            similarity,
+            rank,
         })
         .from(Sections)
         .where(
             and(
                 eq(Sections.agreement_id, agreementId),
-                gt(similarity, VECTOR_SIMILARITY_THRESHOLD),
+                sql`${document} @@ ${query}`,
             ),
         )
-        .orderBy((t) => desc(t.similarity))
-        .limit(5);
-
-    return results;
-};
-
-/**
- * Updates section vector embeddings.
- */
-export const updateSectionEmbedding = async (
-    agreementId: string,
-    sectionId: string,
-    embedding: number[],
-    userId: string,
-): Promise<void> => {
-    await ensureAgreementExists(agreementId, userId);
-
-    await db
-        .update(Sections)
-        .set({ embedding })
-        .where(
-            and(
-                eq(Sections.id, sectionId),
-                eq(Sections.agreement_id, agreementId),
-            ),
-        );
-};
-
-/**
- * Batch insert agreement risk analysis content.
- */
-export const insertAgreementRisks = async (
-    userId: string,
-    agreementId: string,
-    data: { clause: string; reason: string; level: RiskLevelType }[],
-): Promise<{ id: string }[]> => {
-    await ensureAgreementExists(agreementId, userId);
-
-    const dataToInsert = data.map((d) => ({
-        agreement_id: agreementId,
-        clause: d.clause,
-        reason: d.reason,
-        level: d.level,
-    }));
-    const insertedIds = await db
-        .insert(Risks)
-        .values(dataToInsert)
-        .returning({ id: Risks.id });
-    return insertedIds;
+        .orderBy((t) => desc(t.rank))
+        .limit(limit);
 };
 
 /**
@@ -339,6 +285,11 @@ export const fetchRisksByAgreement = async (
     agreementId: string,
     userId: string,
 ) => {
+    if (MemoryStore.hasMemoryAgreement(agreementId)) {
+        return MemoryStore.getMemoryRisks(agreementId, userId);
+    }
+    if (!databaseAvailable) return [];
+
     await ensureAgreementExists(agreementId, userId);
 
     const risks = await db
@@ -352,24 +303,4 @@ export const fetchRisksByAgreement = async (
         .where(eq(Risks.agreement_id, agreementId));
 
     return risks;
-};
-
-/**
- * Re-trigger agreement processing by setting status to RESTART
- */
-export const processAgreement = async (agreementId: string, userId: string) => {
-    const agreement = await fetchAgreement(agreementId, userId);
-    if (!agreement) throw new Error("Agreement not found");
-
-    await updateAgreementStatus(agreementId, "RESTART", null, userId);
-
-    // Reset cache
-    AgreementCache.del(agreementId);
-
-    // Emit file proccesing event
-    await publishAgreementProcessEvent({
-        agreementId,
-        fileId: agreement.fileId,
-        userId,
-    });
 };

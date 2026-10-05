@@ -17,7 +17,8 @@
         "start": "tsx dist/index.js",
         "test": "vitest run",
         "generate-schema": "drizzle-kit generate",
-        "migrate-schema": "drizzle-kit migrate"
+        "migrate-schema": "drizzle-kit migrate",
+        "db:push": "drizzle-kit push --force"
     },
     "dependencies": {
         "@aws-sdk/client-s3": "^3.1104.0",
@@ -44,7 +45,6 @@
         "pino": "^10.3.1",
         "pino-http": "^11.0.0",
         "rate-limit-redis": "^6.0.1",
-        "resend": "^6.20.0",
         "tsx": "^4.23.5",
         "typescript": "^5.0.0",
         "uuid": "^14.0.1",

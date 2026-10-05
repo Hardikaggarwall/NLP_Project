@@ -1,8 +1,8 @@
 import { ChatMessageRole } from "@/constants";
 import { Chats } from "@/db/schema/chats";
 import { Messages } from "@/db/schema/messages";
-import { db } from "@/infra/db.client";
-import { ChatCache, ChatMessagesCache } from "@/services/cache.service";
+import { databaseAvailable, db } from "@/infra/db.client";
+import * as MemoryStore from "@/services/memory.store";
 import { and, desc, eq, lte, ne } from "drizzle-orm";
 
 /**
@@ -12,6 +12,11 @@ export const createChat = async (
     userId: string,
     agreementId: string,
 ): Promise<string> => {
+    if (MemoryStore.hasMemoryAgreement(agreementId)) {
+        return MemoryStore.getMemoryChat(agreementId, userId, true)!.id;
+    }
+    if (!databaseAvailable) throw new Error("Agreement not found");
+
     // Insert into DB
     const [chat] = await db
         .insert(Chats)
@@ -32,24 +37,21 @@ export const fetchChatById = async (
     userId: string,
     agreementId: string,
 ) => {
-    let chat = await ChatCache.get(chatId);
+    const memoryChat = MemoryStore.getMemoryChat(agreementId, userId);
+    if (memoryChat?.id === chatId) return memoryChat;
+    if (!databaseAvailable) throw new Error("Chat not found");
 
-    if (!chat) {
-        // Fetch from database
-        const [dbChat] = await db
-            .select({
-                id: Chats.id,
-                user_id: Chats.user_id,
-                agreement_id: Chats.agreement_id,
-                created_at: Chats.created_at,
-            })
-            .from(Chats)
-            .where(eq(Chats.id, chatId));
+    const [chat] = await db
+        .select({
+            id: Chats.id,
+            user_id: Chats.user_id,
+            agreement_id: Chats.agreement_id,
+            created_at: Chats.created_at,
+        })
+        .from(Chats)
+        .where(eq(Chats.id, chatId));
 
-        if (!dbChat) throw new Error("Chat not found");
-        chat = dbChat;
-        await ChatCache.set(chat.id, chat);
-    }
+    if (!chat) throw new Error("Chat not found");
 
     if (chat.user_id !== userId || chat.agreement_id !== agreementId) {
         throw new Error("Unauthorized access");
@@ -65,6 +67,11 @@ export const fetchChatByAgreement = async (
     agreementId: string,
     userId: string,
 ) => {
+    if (MemoryStore.hasMemoryAgreement(agreementId)) {
+        return MemoryStore.getMemoryChat(agreementId, userId, true)!.id;
+    }
+    if (!databaseAvailable) throw new Error("Agreement not found");
+
     const [chat] = await db
         .select({
             id: Chats.id,
@@ -95,6 +102,17 @@ export const insertChatMessage = async (
         content: string;
     },
 ) => {
+    if (MemoryStore.hasMemoryAgreement(agreementId)) {
+        return MemoryStore.appendMemoryChatMessage(
+            chatId,
+            userId,
+            agreementId,
+            message.role,
+            message.content,
+        );
+    }
+    if (!databaseAvailable) throw new Error("Chat not found");
+
     // Validate chat exists
     const chat = await fetchChatById(chatId, userId, agreementId);
     if (!chat) throw new Error("Chat not found");
@@ -115,10 +133,6 @@ export const insertChatMessage = async (
             createdAt: Messages.created_at,
         });
 
-    if (insertedMessage) {
-        await ChatMessagesCache.push(chatId, insertedMessage);
-    }
-
     return insertedMessage;
 };
 
@@ -130,38 +144,24 @@ export const fetchChatMessages = async (
     chatId: string,
     userId: string,
     agreementId: string,
-    limit: number = ChatMessagesCache.limit,
+    limit: number = 20,
     cursor?: string, // base64-encoded "id"
 ) => {
+    if (MemoryStore.hasMemoryAgreement(agreementId)) {
+        return MemoryStore.listMemoryChatMessages(
+            chatId,
+            userId,
+            agreementId,
+            limit,
+            cursor,
+        );
+    }
+    if (!databaseAvailable) throw new Error("Chat not found");
+
     // Validate chat exists
     const chat = await fetchChatById(chatId, userId, agreementId);
     if (!chat) throw new Error("Chat not found");
 
-    // 1. Try cache if no cursor and requested limit fits in cache limit
-    if (!cursor && limit <= ChatMessagesCache.limit) {
-        const cachedMessages = await ChatMessagesCache.getRecent<{
-            id: string;
-            chatId: string;
-            role: ChatMessageRole;
-            content: string;
-            createdAt: Date;
-        }>(chatId, limit);
-
-        if (cachedMessages) {
-            let nextCursor = null;
-
-            // If we got a full page, there's more data; create a cursor
-            if (cachedMessages.length >= limit) {
-                const lastMessage = cachedMessages.at(-1)!;
-                nextCursor = Buffer.from(lastMessage.id).toString("base64url");
-            }
-
-            // Return cached messages (descending order)
-            return { messages: cachedMessages, nextCursor };
-        }
-    }
-
-    // 2. Query DB on cache miss or cursor pagination
     const cursorId = cursor
         ? Buffer.from(cursor, "base64url").toString("utf8")
         : undefined;
@@ -187,11 +187,6 @@ export const fetchChatMessages = async (
         .where(and(...filters))
         .limit(limit)
         .orderBy(desc(Messages.id));
-
-    // 3. Populate cache if this was Page 1
-    if (!cursor && messages.length > 0) {
-        await ChatMessagesCache.setMany(chatId, messages);
-    }
 
     // Prepare next cursor only if we got a full page (more data likely exists)
     let nextCursor = null;

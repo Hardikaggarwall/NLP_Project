@@ -1,15 +1,22 @@
 import { FILE_STATUS } from "@/constants";
 import { sql } from "drizzle-orm";
 import {
+    customType,
     index,
+    integer,
     pgEnum,
     pgTable,
-    text,
     timestamp,
     uuid,
     varchar,
 } from "drizzle-orm/pg-core";
 import { Users } from "./users";
+
+const bytea = customType<{ data: Buffer; driverData: Buffer }>({
+    dataType() {
+        return "bytea";
+    },
+});
 
 export const FileStatusEnum = pgEnum("file_status", FILE_STATUS);
 
@@ -25,7 +32,9 @@ export const Files = pgTable(
             .notNull(),
         file_name: varchar({ length: 255 }).notNull(),
         mime_type: varchar({ length: 60 }).notNull(),
-        key: text().default("").notNull(),
+        size: integer().notNull(),
+        // Raw file content is stored in the database (no object storage)
+        data: bytea().notNull(),
         status: FileStatusEnum().notNull(),
         updated_at: timestamp()
             .defaultNow()

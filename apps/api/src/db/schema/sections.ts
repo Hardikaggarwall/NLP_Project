@@ -8,7 +8,6 @@ import {
     timestamp,
     uuid,
     varchar,
-    vector,
 } from "drizzle-orm/pg-core";
 import { Agreements } from "./agreements";
 
@@ -28,7 +27,6 @@ export const Sections = pgTable(
         heading: varchar({ length: 255 }).notNull(),
         type: TypeEnum().notNull(),
         content: text().notNull(),
-        embedding: vector("embedding", { dimensions: 1536 }),
         updated_at: timestamp()
             .defaultNow()
             .notNull()
@@ -37,9 +35,10 @@ export const Sections = pgTable(
     },
     (table) => [
         index("sections_agreement_id_idx").on(table.agreement_id),
-        index("sections_embedding_idx").using(
-            "hnsw",
-            table.embedding.op("vector_cosine_ops"),
+        // Full-text search index used by the chat query engine
+        index("sections_search_idx").using(
+            "gin",
+            sql`to_tsvector('english', ${table.heading} || ' ' || ${table.content})`,
         ),
     ],
 );

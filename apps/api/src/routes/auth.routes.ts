@@ -1,10 +1,10 @@
-import { requestOtp, verifyOtp, logout } from "@/controllers/auth.controller";
+import { login, logout } from "@/controllers/auth.controller";
+import { authorize } from "@/middlewares/auth.middleware";
 import { Router } from "express";
 
 const router = Router();
 
-router.post("/otp/request", requestOtp);
-router.post("/otp/verify", verifyOtp);
-router.post("/logout", logout);
+router.post("/login", login);
+router.post("/logout", authorize, logout);
 
 export default router;

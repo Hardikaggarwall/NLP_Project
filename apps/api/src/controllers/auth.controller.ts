@@ -4,9 +4,9 @@ import { isEmail } from "@/utils/validator.util";
 import { Request, Response } from "express";
 
 /**
- * Request OTP for login / signup
+ * Login / signup with email and issue JWT + Session ID
  */
-export const requestOtp = async (req: Request, res: Response) => {
+export const login = async (req: Request, res: Response) => {
     try {
         const { email } = req.body;
 
@@ -17,47 +17,15 @@ export const requestOtp = async (req: Request, res: Response) => {
             return res.status(400).json({ error: "Email is invalid" });
         }
 
-        const { error, expiryInMins } = await AuthService.sendOTP(email);
-
-        if (error) {
-            return res.status(400).json({ error });
-        }
-
-        return res.status(200).json({
-            message: "OTP sent successfully",
-            expiryInMins,
-        });
-    } catch (error: any) {
-        logger.error(error.message);
-        return res.status(500).json({ error: "Internal server error" });
-    }
-};
-
-/**
- * Verify OTP and issue JWT + Session ID
- */
-export const verifyOtp = async (req: Request, res: Response) => {
-    try {
-        const { email, otp } = req.body;
-        if (!email || !otp) {
-            return res
-                .status(400)
-                .json({ error: "Email and OTP are required" });
-        }
-
-        const { success, error, token, enableOnboarding } =
-            await AuthService.authenticateWithOTP(email, otp);
-
-        if (!success) {
-            return res.status(400).json({ error });
-        }
+        const { token, enableOnboarding } =
+            await AuthService.authenticateWithEmail(email);
 
         // Set token header
-        res.setHeader("x-access-token", token!);
+        res.setHeader("x-access-token", token);
         res.setHeader("Access-Control-Expose-Headers", "x-access-token");
 
         return res.status(200).json({
-            message: "OTP verified successfully",
+            message: "Logged in successfully",
             enableOnboarding,
         });
     } catch (error: any) {
@@ -66,17 +34,11 @@ export const verifyOtp = async (req: Request, res: Response) => {
     }
 };
 
+/**
+ * Logout - tokens are stateless, so the client simply discards its token
+ */
 export const logout = async (req: Request, res: Response) => {
-    try {
-        const { sessionId } = req.user;
-
-        await AuthService.logoutUser(sessionId);
-
-        return res.status(200).json({
-            message: "Logged out successfully",
-        });
-    } catch (error: any) {
-        logger.error(error.message);
-        return res.status(500).json({ error: "Internal server error" });
-    }
+    return res.status(200).json({
+        message: "Logged out successfully",
+    });
 };
